@@ -27,7 +27,7 @@ class SpotifyStreamWidget:
         self.config_file = "config.json"
         self.config = self.load_config()
         self.spotify = None
-        self.websocket_server = None
+        self.websocket_server_task = None
         self.current_track = None
         self.is_running = False
         
@@ -179,42 +179,63 @@ class SpotifyStreamWidget:
         except Exception as e:
             logger.error(f"Error controlling playback: {e}")
     
-    async def handle_websocket_message(self, websocket, message):
+    async def handle_websocket_message(self, websocket, path):
         """Handle incoming WebSocket messages"""
         try:
-            data = json.loads(message)
-            command = data.get('command')
-            value = data.get('value')
-            
-            logger.info(f"Received command: {command}")
-            
-            if command in ['play', 'pause', 'next', 'previous']:
-                self.control_playback(command)
-            elif command == 'volume' and value is not None:
-                self.control_playback('volume', value)
-            elif command == 'seek' and value is not None:
-                self.control_playback('seek', value)
-            elif command == 'status':
-                track = self.get_current_track()
-                await websocket.send(json.dumps({
-                    'type': 'status',
-                    'track': track,
-                    'timestamp': datetime.now().isoformat()
-                }))
+            async for message in websocket:
+                data = json.loads(message)
+                command = data.get('command')
+                value = data.get('value')
                 
+                logger.info(f"Received command: {command}")
+                
+                if command in ['play', 'pause', 'next', 'previous']:
+                    self.control_playback(command)
+                elif command == 'volume' and value is not None:
+                    self.control_playback('volume', value)
+                elif command == 'seek' and value is not None:
+                    self.control_playback('seek', value)
+                elif command == 'status':
+                    track = self.get_current_track()
+                    await websocket.send(json.dumps({
+                        'type': 'status',
+                        'track': track,
+                        'timestamp': datetime.now().isoformat()
+                    }))
+                    
         except json.JSONDecodeError:
             logger.error("Invalid JSON received")
         except Exception as e:
             logger.error(f"Error handling WebSocket message: {e}")
     
-    async def websocket_server(self):
-        """Start WebSocket server for OBS integration"""
+    async def run_websocket_server(self):
+        """Run WebSocket server"""
         try:
-            async with websockets.serve(self.handle_websocket_message, "localhost", 8765):
-                logger.info("WebSocket server started on ws://localhost:8765")
-                await asyncio.Future()  # Run forever
+            server = await websockets.serve(self.handle_websocket_message, "localhost", 8765)
+            logger.info("WebSocket server started on ws://localhost:8765")
+            await server.wait_closed()
         except Exception as e:
             logger.error(f"WebSocket server error: {e}")
+    
+    def start_websocket_server(self):
+        """Start WebSocket server in a separate thread"""
+        try:
+            # Create a new event loop for the thread
+            def run_server():
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    loop.run_until_complete(self.run_websocket_server())
+                finally:
+                    loop.close()
+            
+            websocket_thread = threading.Thread(target=run_server)
+            websocket_thread.daemon = True
+            websocket_thread.start()
+            logger.info("WebSocket server thread started")
+            
+        except Exception as e:
+            logger.error(f"Error starting WebSocket server thread: {e}")
     
     def start(self):
         """Start the Spotify Stream Widget"""
@@ -225,10 +246,8 @@ class SpotifyStreamWidget:
             logger.error("Failed to authenticate with Spotify")
             return
             
-        # Start WebSocket server in a separate thread
-        websocket_thread = threading.Thread(target=asyncio.run, args=(self.websocket_server(),))
-        websocket_thread.daemon = True
-        websocket_thread.start()
+        # Start WebSocket server
+        self.start_websocket_server()
         
         self.is_running = True
         logger.info("Widget is running. Use WebSocket commands to control playback.")
