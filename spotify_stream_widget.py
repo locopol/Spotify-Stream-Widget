@@ -33,6 +33,7 @@ class SpotifyStreamWidget:
         self.websocket_server_task = None
         self.current_track_id = None
         self.is_running = False
+        self.auth_manager = None
         
     def load_config(self):
         """Load configuration from JSON file"""
@@ -80,7 +81,7 @@ class SpotifyStreamWidget:
             
             # Setup Spotify authentication
             scope = 'user-read-playback-state user-modify-playback-state'
-            auth_manager = SpotifyOAuth(
+            self.auth_manager = SpotifyOAuth(
                 client_id=client_id,
                 client_secret=client_secret,
                 redirect_uri=redirect_uri,
@@ -89,7 +90,7 @@ class SpotifyStreamWidget:
             )
             
             # Get access token - using as_dict=False to avoid the deprecation warning
-            token_info = auth_manager.get_access_token(as_dict=False)
+            token_info = self.auth_manager.get_access_token(as_dict=False)
             if token_info:
                 self.spotify = spotipy.Spotify(auth=token_info)
                 logger.info("Successfully authenticated with Spotify")
@@ -100,6 +101,25 @@ class SpotifyStreamWidget:
                 
         except Exception as e:
             logger.error(f"Spotify authentication error: {e}")
+            return False
+    
+    def refresh_spotify_token(self):
+        """Refresh Spotify access token"""
+        try:
+            if self.auth_manager:
+                token_info = self.auth_manager.refresh_access_token()
+                if token_info:
+                    self.spotify = spotipy.Spotify(auth=token_info['access_token'])
+                    logger.info("Successfully refreshed Spotify token")
+                    return True
+                else:
+                    logger.error("Failed to refresh Spotify token")
+                    return False
+            else:
+                logger.error("No auth manager available for token refresh")
+                return False
+        except Exception as e:
+            logger.error(f"Error refreshing Spotify token: {e}")
             return False
     
     def get_current_track(self):
@@ -127,6 +147,12 @@ class SpotifyStreamWidget:
                 return None
                 
         except Exception as e:
+            # Check if token is expired and try to refresh
+            if "401" in str(e) or "Unauthorized" in str(e):
+                logger.info("Token expired, attempting to refresh...")
+                if self.refresh_spotify_token():
+                    # Retry getting the track after token refresh
+                    return self.get_current_track()
             logger.error(f"Error getting current track: {e}")
             return None
     
@@ -220,7 +246,16 @@ class SpotifyStreamWidget:
                     logger.info(f"Seeked to {value}ms")
                     
         except Exception as e:
-            logger.error(f"Error controlling playback: {e}")
+            # Check if token is expired and try to refresh
+            if "401" in str(e) or "Unauthorized" in str(e):
+                logger.info("Token expired, attempting to refresh...")
+                if self.refresh_spotify_token():
+                    # Retry the command after token refresh
+                    self.control_playback(command, value)
+                else:
+                    logger.error(f"Error controlling playback after token refresh: {e}")
+            else:
+                logger.error(f"Error controlling playback: {e}")
     
     async def handle_websocket_message(self, websocket, path):
         """Handle incoming WebSocket messages"""
