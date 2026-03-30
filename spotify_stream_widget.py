@@ -28,7 +28,7 @@ class SpotifyStreamWidget:
         self.config = self.load_config()
         self.spotify = None
         self.websocket_server_task = None
-        self.current_track = None
+        self.current_track_id = None
         self.is_running = False
         
     def load_config(self):
@@ -117,7 +117,8 @@ class SpotifyStreamWidget:
                     'duration_ms': track['duration_ms'],
                     'progress_ms': playback['progress_ms'],
                     'is_playing': True,
-                    'album_art_url': track['album']['images'][0]['url'] if track['album']['images'] else None
+                    'album_art_url': track['album']['images'][0]['url'] if track['album']['images'] else None,
+                    'track_id': track['id']
                 }
             else:
                 return None
@@ -238,7 +239,7 @@ class SpotifyStreamWidget:
             logger.error(f"Error starting WebSocket server thread: {e}")
     
     def start(self):
-        """Start the Spotify Stream Widget"""
+        """Start the Spotify Stream Widget with song change detection"""
         logger.info("Starting Spotify Stream Widget...")
         
         # Authenticate with Spotify
@@ -255,9 +256,22 @@ class SpotifyStreamWidget:
         
         try:
             while self.is_running:
-                # Get and display current track
+                # Get current track
                 track = self.get_current_track()
-                self.display_track_info(track)
+                
+                # Check if track has changed
+                if track:
+                    if self.current_track_id != track['track_id']:
+                        logger.info(f"Song changed to: {track['name']} by {', '.join(track['artists'])}")
+                        self.current_track_id = track['track_id']
+                        # Display new track info
+                        self.display_track_info(track)
+                    else:
+                        # Only update progress if same song
+                        self.display_track_info(track)
+                else:
+                    # No track playing, display empty info
+                    self.display_track_info(None)
                 
                 # Wait before next update
                 time.sleep(5)
