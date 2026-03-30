@@ -17,6 +17,9 @@ from datetime import datetime
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 import logging
+from PIL import Image
+import requests
+from io import BytesIO
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -149,6 +152,45 @@ class SpotifyStreamWidget:
         print(f"Status: {'Playing' if track['is_playing'] else 'Paused'}")
         print(f"{'='*50}")
     
+    def export_track_data(self, track):
+        """Export track information to files"""
+        try:
+            if not self.config.get('export_mode', False):
+                return
+                
+            # Create export directory if it doesn't exist
+            export_dir = "exported-details"
+            if not os.path.exists(export_dir):
+                os.makedirs(export_dir)
+            
+            # Export track name
+            with open(os.path.join(export_dir, "track.txt"), "w") as f:
+                f.write(track['name'])
+            
+            # Export album name
+            with open(os.path.join(export_dir, "album.txt"), "w") as f:
+                f.write(track['album'])
+            
+            # Export artists
+            artists = ", ".join(track['artists'])
+            with open(os.path.join(export_dir, "artists.txt"), "w") as f:
+                f.write(artists)
+            
+            # Export album cover image
+            if track['album_art_url']:
+                try:
+                    response = requests.get(track['album_art_url'])
+                    if response.status_code == 200:
+                        image = Image.open(BytesIO(response.content))
+                        image.save(os.path.join(export_dir, "albumCover.png"))
+                except Exception as e:
+                    logger.error(f"Error downloading album cover: {e}")
+            
+            logger.info("Track data exported successfully")
+            
+        except Exception as e:
+            logger.error(f"Error exporting track data: {e}")
+    
     def control_playback(self, command, value=None):
         """Control Spotify playback via WebSocket commands"""
         try:
@@ -266,6 +308,8 @@ class SpotifyStreamWidget:
                         self.current_track_id = track['track_id']
                         # Display new track info
                         self.display_track_info(track)
+                        # Export track data
+                        self.export_track_data(track)
                     else:
                         # Only update progress if same song
                         self.display_track_info(track)
