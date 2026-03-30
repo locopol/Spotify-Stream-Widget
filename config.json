@@ -1,0 +1,10 @@
+{
+  "dark_mode": true,
+  "size": "normal",
+  "progress_bar_style": "blocks",
+  "progress_color": "green",
+  "export_mode": false,
+  "api_calls": 0,
+  "local_dir": "",
+  "window_color": "green"
+}
