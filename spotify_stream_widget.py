@@ -85,15 +85,10 @@ class SpotifyStreamWidget:
                 show_dialog=True
             )
             
-            # Open browser for authentication
-            auth_url = auth_manager.get_authorize_url()
-            logger.info("Opening browser for Spotify authentication...")
-            webbrowser.open(auth_url)
-            
-            # Get access token
-            token_info = auth_manager.get_access_token()
+            # Get access token - using as_dict=False to avoid the deprecation warning
+            token_info = auth_manager.get_access_token(as_dict=False)
             if token_info:
-                self.spotify = spotipy.Spotify(auth=token_info['access_token'])
+                self.spotify = spotipy.Spotify(auth=token_info)
                 logger.info("Successfully authenticated with Spotify")
                 return True
             else:
