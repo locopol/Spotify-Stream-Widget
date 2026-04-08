@@ -6,5 +6,9 @@
   "export_mode": false,
   "api_calls": 0,
   "local_dir": "",
-  "window_color": "green"
+  "window_color": "green",
+  "obs_websocket_host": "localhost",
+  "obs_websocket_port": 4455,
+  "obs_websocket_password": "password",
+  "scene_switcher_enabled": true
 }
