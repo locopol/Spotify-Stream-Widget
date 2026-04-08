@@ -34,6 +34,8 @@ class SpotifyStreamWidget:
         self.current_track_id = None
         self.is_running = False
         self.auth_manager = None
+        self.obs_websocket_connected = False
+        self.obs_websocket_uri = None
         
     def load_config(self):
         """Load configuration from JSON file"""
@@ -51,7 +53,11 @@ class SpotifyStreamWidget:
                     "export_mode": False,
                     "api_calls": 0,
                     "local_dir": "",
-                    "window_color": "green"
+                    "window_color": "green",
+                    "obs_websocket_host": "localhost",
+                    "obs_websocket_port": 4455,
+                    "obs_websocket_password": "password",
+                    "scene_switcher_enabled": True
                 }
                 self.save_config(default_config)
                 return default_config
@@ -257,6 +263,37 @@ class SpotifyStreamWidget:
             else:
                 logger.error(f"Error controlling playback: {e}")
     
+    async def send_obs_websocket_message(self, message_data):
+        """Send message to OBS WebSocket server for Scene Switcher integration"""
+        if not self.config.get('scene_switcher_enabled', True):
+            return
+            
+        try:
+            if not self.obs_websocket_uri:
+                # Construct WebSocket URI from config
+                host = self.config.get('obs_websocket_host', 'localhost')
+                port = self.config.get('obs_websocket_port', 4455)
+                password = self.config.get('obs_websocket_password', 'password')
+                self.obs_websocket_uri = f"ws://{host}:{port}"
+            
+            # Connect to OBS WebSocket server
+            async with websockets.connect(self.obs_websocket_uri) as websocket:
+                # Send the vendor request for Scene Switcher
+                message = {
+                    "requestType": "CallVendorRequest",
+                    "requestData": {
+                        "vendorName": "AdvancedSceneSwitcher",
+                        "requestType": "AdvancedSceneSwitcherMessage",
+                        "requestData": message_data
+                    }
+                }
+                
+                await websocket.send(json.dumps(message))
+                logger.info(f"Sent message to Scene Switcher: {message_data}")
+                
+        except Exception as e:
+            logger.error(f"Error sending message to Scene Switcher: {e}")
+    
     async def handle_websocket_message(self, websocket, path):
         """Handle incoming WebSocket messages"""
         try:
@@ -341,6 +378,27 @@ class SpotifyStreamWidget:
                     if self.current_track_id != track['track_id']:
                         logger.info(f"Song changed to: {track['name']} by {', '.join(track['artists'])}")
                         self.current_track_id = track['track_id']
+                        
+                        # Send message to Scene Switcher
+                        if self.config.get('scene_switcher_enabled', True):
+                            # Format the message for Scene Switcher
+                            message_data = {
+                                "message": "spotify_track_change",
+                                "track": track['name'],
+                                "artist": ", ".join(track['artists']),
+                                "album": track['album'],
+                                "timestamp": datetime.now().isoformat()
+                            }
+                            # Send asynchronously to avoid blocking
+                            async def send_message():
+                                await self.send_obs_websocket_message(message_data)
+                            
+                            # Run the async function in a new thread
+                            def run_async():
+                                asyncio.run(send_message())
+                            
+                            threading.Thread(target=run_async).start()
+                        
                         # Display new track info
                         self.display_track_info(track)
                         # Export track data
