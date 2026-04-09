@@ -113,13 +113,22 @@ class SpotifyStreamWidget:
         """Refresh Spotify access token"""
         try:
             if self.auth_manager:
-                token_info = self.auth_manager.refresh_access_token()
-                if token_info:
-                    self.spotify = spotipy.Spotify(auth=token_info['access_token'])
-                    logger.info("Successfully refreshed Spotify token")
-                    return True
+                # Get the refresh token from the current token info
+                token_info = self.auth_manager.get_access_token(as_dict=True)
+                refresh_token = token_info.get('refresh_token')
+                
+                if refresh_token:
+                    # Use the refresh token to get a new access token
+                    token_info = self.auth_manager.refresh_access_token(refresh_token)
+                    if token_info:
+                        self.spotify = spotipy.Spotify(auth=token_info['access_token'])
+                        logger.info("Successfully refreshed Spotify token")
+                        return True
+                    else:
+                        logger.error("Failed to refresh Spotify token")
+                        return False
                 else:
-                    logger.error("Failed to refresh Spotify token")
+                    logger.error("No refresh token found for Spotify token refresh")
                     return False
             else:
                 logger.error("No auth manager available for token refresh")
